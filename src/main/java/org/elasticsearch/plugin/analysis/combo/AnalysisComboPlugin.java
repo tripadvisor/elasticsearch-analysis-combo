@@ -19,22 +19,37 @@
 
 package org.elasticsearch.plugin.analysis.combo;
 
+import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.ComboAnalyzerWrapper;
-import org.elasticsearch.index.analysis.AnalysisModule;
+import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.env.Environment;
+import org.elasticsearch.index.IndexSettings;
+import org.elasticsearch.index.analysis.AnalyzerProvider;
 import org.elasticsearch.index.analysis.ComboAnalyzerProvider;
+import org.elasticsearch.indices.analysis.AnalysisModule;
+import org.elasticsearch.plugins.AnalysisPlugin;
 import org.elasticsearch.plugins.Plugin;
 
-public class AnalysisComboPlugin extends Plugin {
+import java.io.IOException;
+import java.util.Map;
 
-    @Override public String name() {
-        return "analysis-combo";
-    }
+import static java.util.Collections.singletonMap;
 
-    @Override public String description() {
-        return "Analyser that can multiplex multiple terms from different analyzers";
-    }
+public class AnalysisComboPlugin extends Plugin implements AnalysisPlugin {
+    @Override
+    public Map<String, AnalysisModule.AnalysisProvider<AnalyzerProvider<? extends Analyzer>>> getAnalyzers() {
+        AnalysisModule.AnalysisProvider<AnalyzerProvider<? extends Analyzer>> analysisProvider = new AnalysisModule.AnalysisProvider<AnalyzerProvider<? extends Analyzer>>() {
+            @Override
+            public AnalyzerProvider<? extends Analyzer> get(IndexSettings indexSettings, Environment environment, String name, Settings settings) throws IOException {
+                return new ComboAnalyzerProvider(indexSettings, environment, name, settings);
+            }
 
-    public void onModule(AnalysisModule module) {
-        module.addAnalyzer(ComboAnalyzerWrapper.NAME, ComboAnalyzerProvider.class);
+            @Override
+            public boolean requiresAnalysisSettings() {
+                return true;
+            }
+        };
+
+        return singletonMap(ComboAnalyzerWrapper.NAME, analysisProvider);
     }
 }

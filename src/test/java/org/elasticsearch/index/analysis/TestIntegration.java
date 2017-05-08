@@ -11,11 +11,7 @@ import org.elasticsearch.test.ESIntegTestCase;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -29,7 +25,7 @@ public class TestIntegration extends ESIntegTestCase {
     public static final String ANALYZER = "configured_analyzer";
 
     protected Collection<Class<? extends Plugin>> nodePlugins() {
-        return pluginList(AnalysisComboPlugin.class);
+        return Collections.singleton(AnalysisComboPlugin.class);
     }
 
     protected Settings nodeSettings(int nodeOrdinal) {

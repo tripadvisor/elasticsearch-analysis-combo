@@ -17,7 +17,7 @@
 
 package org.apache.lucene.util;
 
-import org.elasticsearch.common.logging.ESLogger;
+import org.apache.logging.log4j.Logger;
 import org.elasticsearch.common.logging.ESLoggerFactory;
 
 import java.io.BufferedReader;
@@ -46,7 +46,7 @@ import java.util.WeakHashMap;
  */
 public class ReaderCloneFactory {
 
-    private static final ESLogger logger = ESLoggerFactory.getLogger(ReaderCloneFactory.class.getSimpleName());
+    private static final Logger logger = ESLoggerFactory.getLogger(ReaderCloneFactory.class.getSimpleName());
 
     /**
      * Interface for a utility class, able to unwrap a {@link java.io.Reader}
