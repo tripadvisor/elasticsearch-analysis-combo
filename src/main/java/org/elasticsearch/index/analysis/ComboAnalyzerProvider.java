@@ -21,11 +21,12 @@ package org.elasticsearch.index.analysis;
 
 import org.apache.lucene.analysis.ComboAnalyzerWrapper;
 import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.cluster.metadata.IndexMetaData;
+import org.elasticsearch.common.settings.IndexScopedSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.env.Environment;
 import org.elasticsearch.index.IndexSettings;
 import org.elasticsearch.indices.analysis.AnalysisModule;
-import org.elasticsearch.plugin.analysis.combo.AnalysisComboPlugin;
 import org.elasticsearch.plugins.AnalysisPlugin;
 import org.elasticsearch.plugins.PluginsService;
 
@@ -36,10 +37,12 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class ComboAnalyzerProvider extends AbstractIndexAnalyzerProvider<ComboAnalyzerWrapper> {
+    private static final String ANALYZER_SETTINGS_PREFIX = "index.analysis.analyzer";
 
     private final Environment environment;
     private final Settings analyzerSettings;
     private final String name;
+    private final PluginsService pluginsService;
 
     public ComboAnalyzerProvider(IndexSettings indexSettings, Environment environment, String name, Settings settings) {
         super(indexSettings, name, settings);
@@ -50,6 +53,15 @@ public class ComboAnalyzerProvider extends AbstractIndexAnalyzerProvider<ComboAn
         this.environment = environment;
         this.analyzerSettings = settings;
         this.name = name;
+
+        // TODO: Way to get List<AnalysisPlugin> without loading all plugins by yourself?
+        // Here because in get we get a plugin loading loop
+        this.pluginsService = new PluginsService(
+            environment.settings(),
+            environment.modulesFile(),
+            environment.pluginsFile(),
+            Collections.emptyList() // TODO: from where should I take classpath for plugins?
+        );
     }
 
     @Override
@@ -61,19 +73,11 @@ public class ComboAnalyzerProvider extends AbstractIndexAnalyzerProvider<ComboAn
             return new ComboAnalyzerWrapper(name, analyzerSettings, indexAnalyzers::get);
         } catch (Exception e) {
             e.printStackTrace();
-            throw new ElasticsearchException("Exception while getting ComboAnalyzerWrapper from ComboAnalyzerProvider for analyzer with name: " + name + " and with settings: " + analyzerSettings, e);
+            throw new ElasticsearchException("Exception while getting ComboAnalyzerWrapper from ComboAnalyzerProvider for analyzer with name: [" + name + "]", e);
         }
     }
 
     private IndexAnalyzers getIndexAnalyzers(Environment environment) throws IOException {
-
-        final PluginsService pluginsService = new PluginsService(
-            environment.settings(),
-            environment.modulesFile(),
-            environment.pluginsFile(),
-            Collections.singleton(AnalysisComboPlugin.class) // otherwise it will crash when parsing settings of our analysis combo plugin
-        );
-
         final AnalysisModule analysisModule = new AnalysisModule(
             environment,
             pluginsService.filterPlugins(AnalysisPlugin.class)
@@ -81,15 +85,40 @@ public class ComboAnalyzerProvider extends AbstractIndexAnalyzerProvider<ComboAn
 
         final AnalysisRegistry analysisRegistry = analysisModule.getAnalysisRegistry();
 
-        final Map<String, AnalyzerProvider<?>> analyzerProviderMap = analysisRegistry.buildAnalyzerFactories(indexSettings);
+        // we have to filter everything combo related or we will have infinite recursion
+        final Settings newSettings = filterOutComboSettingsAndLeaveRestUntouched(indexSettings.getSettings());
 
-        // we have to filter ComboAnalyzerProvider or we will have infinite recursion
-        Map<String, AnalyzerProvider<?>> analyzerFactories = filterByValue(
-            analyzerProviderMap,
-            e -> !ComboAnalyzerProvider.class.isAssignableFrom(e.getClass())
-        );
+        IndexMetaData newIndexMetaData = IndexMetaData.builder(indexSettings.getIndexMetaData())
+            .settings(filterOutComboSettingsAndLeaveRestUntouched(indexSettings.getIndexMetaData().getSettings()))
+            .build();
 
-        return analysisRegistry.build(indexSettings, analyzerFactories, Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap());
+        final IndexScopedSettings newScopedSettings = indexSettings.getScopedSettings().copy(newSettings, newIndexMetaData);
+        final IndexSettings newIndexSettings = new IndexSettings(
+            newIndexMetaData,
+            newSettings,
+            indexSettings::matchesIndexName,
+            newScopedSettings);
+
+        return analysisRegistry.build(newIndexSettings);
+    }
+
+    private Settings filterOutComboSettingsAndLeaveRestUntouched(Settings settings) {
+        // TODO: this is more complex that it should be
+        Settings allSettingsButAnalyzers = settings.filter(s -> !s.startsWith(ANALYZER_SETTINGS_PREFIX));
+        Map<String, Settings> groups = settings.getGroups(ANALYZER_SETTINGS_PREFIX);
+        Map<String, Settings> filteredGroups = filterByValue(groups, s -> !s.get("type").equals("combo"));
+
+        Settings.Builder newSettings = Settings.builder()
+            .put(allSettingsButAnalyzers);
+
+        filteredGroups.forEach((analyzerName, analyzerSettings) -> {
+            analyzerSettings.getAsMap().forEach((analyzerSettingName, analyzerSettingValue) -> {
+                String settingKey = ANALYZER_SETTINGS_PREFIX + "." + analyzerName + "." + analyzerSettingName;
+                newSettings.put(settingKey, analyzerSettingValue);
+            });
+        });
+
+        return newSettings.build();
     }
 
     private static <K, V> Map<K, V> filterByValue(Map<K, V> map, Predicate<V> predicate) {

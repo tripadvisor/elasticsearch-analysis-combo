@@ -20,6 +20,7 @@
 package org.apache.lucene.analysis;
 
 import org.apache.logging.log4j.Logger;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.analysis.IndexAnalyzers;
@@ -72,7 +73,7 @@ public final class ComboAnalyzerWrapper extends Analyzer {
         for (String subname : sub) {
             NamedAnalyzer analyzer = analyzerResolver.apply(subname);
             if (analyzer == null) {
-                logger.debug("Sub-analyzer \""+subname+"\" not found!");
+                throw new ElasticsearchException("Couldn't find Sub-analyzer [" + subname + "] when initializing [" + name + "] analyzer");
             } else {
                 subAnalyzers.add(analyzer);
             }
