@@ -11,11 +11,7 @@ import org.elasticsearch.test.ESIntegTestCase;
 import org.junit.Test;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
 
 import static org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -29,7 +25,7 @@ public class TestIntegration extends ESIntegTestCase {
     public static final String ANALYZER = "configured_analyzer";
 
     protected Collection<Class<? extends Plugin>> nodePlugins() {
-        return pluginList(AnalysisComboPlugin.class);
+        return Collections.singleton(AnalysisComboPlugin.class);
     }
 
     protected Settings nodeSettings(int nodeOrdinal) {
@@ -51,6 +47,7 @@ public class TestIntegration extends ESIntegTestCase {
             }
         }
         Iterator<AnalyzeResponse.AnalyzeToken> tokens = response.iterator();
+        assertEquals("Token count should match exactly", output.length, response.getTokens().size());
         for (int i = 0; i < output.length; i++) {
             assertTrue("token "+i+" does not exist", tokens.hasNext());
             AnalyzeResponse.AnalyzeToken token = tokens.next();
@@ -71,22 +68,16 @@ public class TestIntegration extends ESIntegTestCase {
     public void testAnalysis() throws IOException {
         prepareCreate(INDEX)
                 .setSettings(XContentFactory.jsonBuilder()
-                                .startObject()
-                                .startObject("index")
-                                .startObject("analysis")
-                                .startObject("analyzer")
-                                .startObject("configured_analyzer")
-                                .field("type", "combo")
-                                .startArray("sub_analyzers")
+                    .startObject().startObject("index").startObject("analysis").startObject("analyzer")
+                        .startObject(ANALYZER)
+                            .field("type", "combo")
+                            .startArray("sub_analyzers")
                                 .value("whitespace")
                                 .value("english")
                                 .value("keyword")
-                                .endArray()
-                                .endObject()
-                                .endObject()
-                                .endObject()
-                                .endObject()
-                                .endObject()
+                            .endArray()
+                        .endObject()
+                    .endObject().endObject().endObject().endObject()
                 )
                 .execute()
                 .actionGet();
@@ -100,4 +91,132 @@ public class TestIntegration extends ESIntegTestCase {
                 new int[]{ 0,  0,  0,  1,  2,  2,  3,  3});
     }
 
+    @Test
+    public void testAnalysisWithCustomAnalyzersWithoutDuplication() throws IOException {
+        prepareCreate(INDEX)
+            .setSettings(XContentFactory.jsonBuilder()
+                .startObject().startObject("index").startObject("analysis").startObject("analyzer")
+                    .startObject("custom_analyzer_1")
+                         .field("type", "custom")
+                         .field("tokenizer", "standard")
+                         .startArray("filter")
+                             .value("lowercase")
+                         .endArray()
+                    .endObject()
+
+                    .startObject("custom_analyzer_2")
+                         .field("type", "custom")
+                         .field("tokenizer", "standard")
+                         .startArray("filter")
+                             .value("asciifolding")
+                         .endArray()
+                    .endObject()
+
+                    .startObject(ANALYZER)
+                         .field("type", "combo")
+                         .field("deduplication", true)
+                         .startArray("sub_analyzers")
+                             .value("custom_analyzer_1")
+                             .value("custom_analyzer_2")
+                         .endArray()
+                    .endObject()
+                .endObject().endObject().endObject().endObject()
+            )
+            .execute()
+            .actionGet();
+        ensureGreen(INDEX);
+
+        assertAnalyzesTo(ANALYZER, "Ławka Kółko slowo",
+            new String[]{"ławka", "Lawka", "kółko", "Kolko", "slowo"},
+            new int[]{ 0,  0,  6,  6, 12},
+            new int[]{ 5,  5, 11, 11, 17},
+            null,
+            new int[]{ 0,  0,  1,  1, 2});
+    }
+
+    @Test
+    public void testAnalysisWithCustomAnalyzersWithDuplication() throws IOException {
+        prepareCreate(INDEX)
+            .setSettings(XContentFactory.jsonBuilder()
+                .startObject().startObject("index").startObject("analysis").startObject("analyzer")
+                    .startObject("custom_analyzer_1")
+                        .field("type", "custom")
+                        .field("tokenizer", "standard")
+                    .startArray("filter")
+                        .value("lowercase")
+                    .endArray()
+                .endObject()
+
+                .startObject("custom_analyzer_2")
+                    .field("type", "custom")
+                    .field("tokenizer", "standard")
+                    .startArray("filter")
+                        .value("asciifolding")
+                    .endArray()
+                .endObject()
+
+                .startObject(ANALYZER)
+                    .field("type", "combo")
+                    .field("deduplication", false)
+                    .startArray("sub_analyzers")
+                        .value("custom_analyzer_1")
+                        .value("custom_analyzer_2")
+                    .endArray()
+                    .endObject()
+                .endObject().endObject().endObject().endObject()
+            )
+            .execute()
+            .actionGet();
+        ensureGreen(INDEX);
+
+        assertAnalyzesTo(ANALYZER, "Ławka Kółko slowo",
+            new String[]{"ławka", "Lawka", "kółko", "Kolko", "slowo", "slowo"},
+            new int[]{ 0,  0,  6,  6, 12, 12},
+            new int[]{ 5,  5, 11, 11, 17, 17},
+            null,
+            new int[]{ 0,  0,  1,  1,  2,  2});
+    }
+
+    @Test
+    public void testAnalysisShouldDeduplicateOnlyIfPositionIsTheSame() throws IOException {
+        prepareCreate(INDEX)
+            .setSettings(XContentFactory.jsonBuilder()
+                .startObject().startObject("index").startObject("analysis").startObject("analyzer")
+                    .startObject("custom_analyzer_1")
+                         .field("type", "custom")
+                         .field("tokenizer", "standard")
+                         .startArray("filter")
+                             .value("lowercase")
+                         .endArray()
+                    .endObject()
+
+                    .startObject("custom_analyzer_2")
+                         .field("type", "custom")
+                         .field("tokenizer", "standard")
+                         .startArray("filter")
+                             .value("asciifolding")
+                         .endArray()
+                    .endObject()
+
+                    .startObject(ANALYZER)
+                         .field("type", "combo")
+                         .field("deduplication", true)
+                         .startArray("sub_analyzers")
+                             .value("custom_analyzer_1")
+                             .value("custom_analyzer_2")
+                         .endArray()
+                    .endObject()
+                .endObject().endObject().endObject().endObject()
+            )
+            .execute()
+            .actionGet();
+        ensureGreen(INDEX);
+
+        assertAnalyzesTo(ANALYZER, "Ławka Kółko slowo huh slowo",
+            new String[]{"ławka", "Lawka", "kółko", "Kolko", "slowo", "huh", "slowo"},
+            new int[]{ 0,  0,  6,  6, 12, 18, 22},
+            new int[]{ 5,  5, 11, 11, 17, 21, 27},
+            null,
+            new int[]{ 0,  0,  1,  1,  2,  3, 4});
+    }
 }

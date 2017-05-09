@@ -193,7 +193,7 @@ public class ComboAnalyzer extends Analyzer {
         @Override
         public TokenStream getTokenStream() {
             TokenStream ret = createTokenStreams();
-            return deduplication ? new UniqueTokenFilter(ret): ret;
+            return deduplication ? new UniqueTokenFilter(ret, true): ret;
         }
 
         private TokenStream createTokenStreams() {

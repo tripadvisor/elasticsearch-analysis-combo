@@ -19,16 +19,15 @@
 
 package org.apache.lucene.analysis;
 
-import org.apache.lucene.util.Version;
-import org.elasticsearch.common.inject.Injector;
-import org.elasticsearch.common.logging.ESLogger;
+import org.apache.logging.log4j.Logger;
+import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.common.logging.ESLoggerFactory;
 import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.index.analysis.AnalysisService;
+import org.elasticsearch.index.analysis.IndexAnalyzers;
 import org.elasticsearch.index.analysis.NamedAnalyzer;
 
-import java.io.Reader;
 import java.util.ArrayList;
+import java.util.function.Function;
 
 /**
  * ElasticSearch ComboAnalyzerWrapper wrapper over Lucene ComboAnalyzerWrapper.
@@ -37,27 +36,25 @@ public final class ComboAnalyzerWrapper extends Analyzer {
 
     public static final String NAME = "combo";
 
-    private final ESLogger logger;
+    private final Logger logger;
 
-    private final Injector injector;
     private final Settings settings;
-    private final Version version;
     private final String name;
+    private final Function<String, NamedAnalyzer> analyzerResolver;
 
     private org.apache.lucene.analysis.ComboAnalyzer analyzer;
 
-    public ComboAnalyzerWrapper(Version version, String name, Settings settings, Injector injector) {
+    public ComboAnalyzerWrapper(String name, Settings settings, Function<String, NamedAnalyzer> analyzerResolver) {
         logger = ESLoggerFactory.getLogger(NAME+">"+name);
 
         this.name = name;
 
         // Store parameters for lazy usage
         // See ComboAnalyzerProvider comments to learn why
-        this.injector = injector;
         this.settings = settings;
-        this.version = version;
 
         this.analyzer = null; // must be lazy initialized to get free of the cyclic dependency on AnalysisService
+        this.analyzerResolver = analyzerResolver;
     }
 
     /**
@@ -66,7 +63,6 @@ public final class ComboAnalyzerWrapper extends Analyzer {
     synchronized
     protected void init() {
         if (analyzer != null) return;
-        AnalysisService analysisService = injector.getInstance(AnalysisService.class);
 
         String[] sub = settings.getAsArray("sub_analyzers");
         ArrayList<Analyzer> subAnalyzers = new ArrayList<Analyzer>();
@@ -75,9 +71,9 @@ public final class ComboAnalyzerWrapper extends Analyzer {
         }
 
         for (String subname : sub) {
-            NamedAnalyzer analyzer = analysisService.analyzer(subname);
+            NamedAnalyzer analyzer = analyzerResolver.apply(subname);
             if (analyzer == null) {
-                logger.debug("Sub-analyzer \""+subname+"\" not found!");
+                throw new ElasticsearchException("Couldn't find Sub-analyzer [" + subname + "] when initializing [" + name + "] analyzer");
             } else {
                 subAnalyzers.add(analyzer);
             }
