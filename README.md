@@ -6,42 +6,38 @@ The Combo Analyzer plugin provides with a new analyzer type that combines the ou
 Installation
 -----------
 
-Simply run at the root of your ElasticSearch v0.90+ installation:
+First build the package with maven:
+	
+	mvn package
 
-	bin/plugin -install com.yakaz.elasticsearch.plugins/elasticsearch-analysis-combo/1.5.1
+If you have some problems with tests no passing because of inability to use refleciton on private fields, use:
+	
+	mvn package -DargLine="-Djava.security.manager -Djava.security.policy=allow_all.policy"
 
-This will download the plugin from the Central Maven Repository.
+where contents of allow_all.policy are:
 
-For older versions of ElasticSearch, you can still use v1.2.0 using the longer command:
+	grant {
+		permission java.security.AllPermission;
+	};
 
-	bin/plugin -url http://oss.sonatype.org/content/repositories/releases/com/yakaz/elasticsearch/plugins/elasticsearch-analysis-combo/1.2.0/elasticsearch-analysis-combo-1.2.0.zip install elasticsearch-analysis-combo
+Then run at the root of your ElasticSearch v5.2 installation:
+
+	bin/elasticsearch-plugin install file:<path>/elasticsearch-analysis-combo-5.2.2-SNAPSHOT.zip
+
+Or add to your docker custom build something along the lines:
+
+	COPY elasticsearch-analysis-combo-5.2.2-SNAPSHOT.zip /usr/share/elasticsearch
+	RUN /usr/share/elasticsearch/bin/elasticsearch-plugin install file:/usr/share/elasticsearch/elasticsearch-analysis-combo-5.2.2-SNAPSHOT.zip
+
+For now not uploaded to Central Maven Repository.
 
 In order to declare this plugin as a dependency, add the following to your `pom.xml`:
 
 	<dependency>
 	    <groupId>com.yakaz.elasticsearch.plugins</groupId>
 	    <artifactId>elasticsearch-analysis-combo</artifactId>
-	    <version>1.5.1</version>
+	    <version>5.2.2</version>
 	</dependency>
-
-Version matrix:
-
-    ┌───────────────────────┬──────────────────────────┐
-    │ Combo Analyzer Plugin │ ElasticSearch            │
-    ├───────────────────────┼──────────────────────────┤
-    │ 1.5.x                 │ 1.0.0.RC1 ─► (1.4.3)     │
-    │                       │           ─► (1.3.8)     │
-    ├───────────────────────┼──────────────────────────┤
-    │ 1.4.x                 │ 0.90.3 ─► 0.90.5         │
-    ├───────────────────────┼──────────────────────────┤
-    │ 1.3.x                 │ 0.90.0 ─► 0.90.2         │
-    ├───────────────────────┼──────────────────────────┤
-    │ 1.2.x                 │ 0.19 ─► 0.20             │
-    ├───────────────────────┼──────────────────────────┤
-    │ 1.1.x                 │ 0.19 ─► 0.20             │
-    ├───────────────────────┼──────────────────────────┤
-    │ 1.0.x                 │ 0.19 ─► 0.20             │
-    └───────────────────────┴──────────────────────────┘
 
 Description
 -----------
