@@ -129,7 +129,7 @@ public class TestIntegration extends ESIntegTestCase {
         assertAnalyzesTo(ANALYZER, "Ławka Kółko slowo",
             new String[]{"ławka", "Lawka", "kółko", "Kolko", "slowo"},
             new int[]{ 0,  0,  6,  6, 12},
-            new int[]{ 5,  5, 11,  11, 17},
+            new int[]{ 5,  5, 11, 11, 17},
             null,
             new int[]{ 0,  0,  1,  1, 2});
     }
@@ -172,8 +172,51 @@ public class TestIntegration extends ESIntegTestCase {
         assertAnalyzesTo(ANALYZER, "Ławka Kółko slowo",
             new String[]{"ławka", "Lawka", "kółko", "Kolko", "slowo", "slowo"},
             new int[]{ 0,  0,  6,  6, 12, 12},
-            new int[]{ 5,  5, 11,  11, 17, 17},
+            new int[]{ 5,  5, 11, 11, 17, 17},
             null,
-            new int[]{ 0,  0,  1,  1, 2, 2});
+            new int[]{ 0,  0,  1,  1,  2,  2});
+    }
+
+    @Test
+    public void testAnalysisShouldDeduplicateOnlyIfPositionIsTheSame() throws IOException {
+        prepareCreate(INDEX)
+            .setSettings(XContentFactory.jsonBuilder()
+                .startObject().startObject("index").startObject("analysis").startObject("analyzer")
+                    .startObject("custom_analyzer_1")
+                         .field("type", "custom")
+                         .field("tokenizer", "standard")
+                         .startArray("filter")
+                             .value("lowercase")
+                         .endArray()
+                    .endObject()
+
+                    .startObject("custom_analyzer_2")
+                         .field("type", "custom")
+                         .field("tokenizer", "standard")
+                         .startArray("filter")
+                             .value("asciifolding")
+                         .endArray()
+                    .endObject()
+
+                    .startObject(ANALYZER)
+                         .field("type", "combo")
+                         .field("deduplication", true)
+                         .startArray("sub_analyzers")
+                             .value("custom_analyzer_1")
+                             .value("custom_analyzer_2")
+                         .endArray()
+                    .endObject()
+                .endObject().endObject().endObject().endObject()
+            )
+            .execute()
+            .actionGet();
+        ensureGreen(INDEX);
+
+        assertAnalyzesTo(ANALYZER, "Ławka Kółko slowo huh slowo",
+            new String[]{"ławka", "Lawka", "kółko", "Kolko", "slowo", "huh", "slowo"},
+            new int[]{ 0,  0,  6,  6, 12, 18, 22},
+            new int[]{ 5,  5, 11, 11, 17, 21, 27},
+            null,
+            new int[]{ 0,  0,  1,  1,  2,  3, 4});
     }
 }
